@@ -9,6 +9,14 @@ message Message {
   bytes data = 2;
 }
 
+message SequencedMessage {
+  string event = 1;
+  bytes data = 2;
+  uint64 sequence = 3;
+  int64 timestamp = 4;
+  string sender_id = 5;
+}
+
 message ChatMessage {
   string content = 1;
   string sender = 2;

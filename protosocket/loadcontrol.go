@@ -36,3 +36,11 @@ func (lc *LoadController) HandleRequest(ctx context.Context, req Request) error 
 
 	return req.Process(ctx)
 }
+
+func NewLoadController(maxRequests int64, queueSize int) *LoadController {
+	return &LoadController{
+		maxRequests:  maxRequests,
+		queueSize:    queueSize,
+		requestQueue: make(chan Request, queueSize),
+	}
+}

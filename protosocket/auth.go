@@ -26,11 +26,25 @@ func GetTokenFromContext(ctx context.Context) string {
 	return ""
 }
 
-func NewAuthMiddleware(auth Authenticator) Middleware {
+func (am *AuthMiddleware) Authenticate(token string) (Claims, error) {
+	if am.authenticator == nil {
+		return nil, errors.New("authenticator não configurado")
+	}
+	return am.authenticator.Authenticate(token)
+}
+
+func NewAuthMiddleware(auth Authenticator) *AuthMiddleware {
+	return &AuthMiddleware{
+		authenticator: auth,
+	}
+}
+
+// Atualizar o middleware para usar o autenticador
+func (am *AuthMiddleware) Middleware() Middleware {
 	return func(next HandlerFunc) HandlerFunc {
 		return func(ctx context.Context, msg proto.Message) error {
 			token := GetTokenFromContext(ctx)
-			claims, err := auth.Authenticate(token)
+			claims, err := am.Authenticate(token)
 			if err != nil {
 				return errors.New("unauthorized")
 			}

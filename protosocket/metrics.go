@@ -51,3 +51,14 @@ func (m *MetricsCollector) RecordMessage(size int, latency time.Duration) {
 func (m *MetricsCollector) RecordError() {
 	atomic.AddUint64(&m.errors, 1)
 }
+
+func (m *MetricsCollector) RecordReceivedMessage(size int) {
+	atomic.AddUint64(&m.messagesReceived, 1)
+	atomic.AddUint64(&m.bytesTransferred, uint64(size))
+}
+
+func NewMetricsCollector() *MetricsCollector {
+	return &MetricsCollector{
+		latencies: make([]time.Duration, 0),
+	}
+}

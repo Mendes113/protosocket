@@ -1,0 +1,12 @@
+syntax = "proto3";
+package protosocket;
+
+option go_package = "github.com/mendes113/protosocket/protosocket/proto";
+
+message Message {
+  string id = 1;
+  string type = 2;
+  bytes data = 3;
+  map<string, string> metadata = 4;
+  int64 timestamp = 5;
+} 

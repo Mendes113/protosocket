@@ -1,4 +1,3 @@
-
 # Protosocket
 
 Uma biblioteca Go para comunicação P2P usando WebSocket com suporte a Protocol Buffers.
@@ -14,6 +13,7 @@ Uma biblioteca Go para comunicação P2P usando WebSocket com suporte a Protocol
 - 📝 Logging estruturado (Zap)
 - 🔄 Reconexão automática
 - 🔍 Descoberta de serviços
+- 📨 Garantia de ordem de mensagens
 
 ## 📦 Instalação
 
@@ -141,7 +141,6 @@ Este projeto está sob a licença MIT. Veja o arquivo [LICENSE](LICENSE) para ma
 
 - Não suporta NAT traversal
 - Sem suporte a DHT para descoberta
-- Sem garantia de ordem de mensagens
 - Sem persistência de mensagens
 
 ## 📚 Documentação Adicional
