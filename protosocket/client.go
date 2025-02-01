@@ -1,14 +1,22 @@
 package protosocket
 
 import (
+	"fmt"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	pb "github.com/mendes113/protosocket/protosocket/proto"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 )
+
+type websocketMessage struct {
+	data []byte
+	err  error
+}
 
 type Client struct {
 	ID             string
@@ -21,6 +29,7 @@ type Client struct {
 	circuitBreaker *CircuitBreaker
 	validator      *MessageValidator
 	retryConfig    RetryConfig
+	textHandlers   map[string]func(string, *Client)
 }
 
 func NewClient(url string) *Client {
@@ -48,6 +57,7 @@ func NewClient(url string) *Client {
 			MaxDelay:          time.Second * 5,
 			BackoffMultiplier: 2.0,
 		},
+		textHandlers: make(map[string]func(string, *Client)),
 	}
 
 	// Inicia a goroutine de escuta
@@ -60,22 +70,24 @@ func (c *Client) On(event string, handler func(proto.Message, *Client)) {
 }
 
 func (c *Client) Emit(event string, msg proto.Message) error {
-	data, err := proto.Marshal(msg)
+	payload, err := proto.Marshal(msg)
 	if err != nil {
-		return err
+		return fmt.Errorf("erro ao serializar mensagem: %w", err)
 	}
 
-	wrapper := &Message{
-		Event: event,
-		Data:  data,
+	wrapper := &pb.MessageWrapper{
+		Event:    event,
+		Data:     payload,
+		SenderId: c.ID,
+		Sequence: atomic.AddUint64(&c.sequence, 1),
 	}
 
-	wrapperData, err := proto.Marshal(wrapper)
+	data, err := proto.Marshal(wrapper)
 	if err != nil {
-		return err
+		return fmt.Errorf("erro ao serializar wrapper: %w", err)
 	}
 
-	return c.conn.WriteMessage(websocket.BinaryMessage, wrapperData)
+	return c.conn.WriteMessage(websocket.BinaryMessage, data)
 }
 
 func (c *Client) EmitWithRetry(event string, msg proto.Message) error {
@@ -89,39 +101,65 @@ func (c *Client) EmitWithRetry(event string, msg proto.Message) error {
 func (c *Client) listen() {
 	defer c.conn.Close()
 	for {
-		_, data, err := c.conn.ReadMessage()
+		msgType, data, err := c.conn.ReadMessage()
 		if err != nil {
 			c.logger.Error("erro na leitura", zap.Error(err))
 			return
 		}
 
 		c.metrics.RecordReceivedMessage(len(data))
-		wrapper := &SequencedMessage{}
-		if err := proto.Unmarshal(data, wrapper); err != nil {
-			c.logger.Error("erro ao decodificar wrapper", zap.Error(err))
-			continue
-		}
 
-		if err := c.processMessage(wrapper); err != nil {
-			c.logger.Error("erro ao processar mensagem", zap.Error(err))
+		switch msgType {
+		case websocket.BinaryMessage:
+			// Processa mensagens Protobuf
+			var wrapper pb.MessageWrapper
+			if err := proto.Unmarshal(data, &wrapper); err != nil {
+				c.logger.Error("erro ao decodificar wrapper", zap.Error(err))
+				continue
+			}
+
+			if handler, ok := c.handlers[wrapper.Event]; ok {
+				var payload pb.Message
+				if err := proto.Unmarshal(wrapper.Data, &payload); err != nil {
+					c.logger.Error("erro ao decodificar payload", zap.Error(err))
+					continue
+				}
+				handler(&payload, c)
+			}
+
+		case websocket.TextMessage:
+			// Processa mensagens de texto simples
+			if textHandler, ok := c.textHandlers["text"]; ok {
+				textHandler(string(data), c)
+			}
+
+		default:
+			c.logger.Warn("tipo de mensagem não suportado", zap.Int("tipo", msgType))
 		}
 	}
 }
 
-func (c *Client) processMessage(msg *SequencedMessage) error {
-	// Validação
-	if err := c.validator.Validate(msg); err != nil {
-		c.logger.Error("mensagem inválida",
-			zap.Error(err),
-			zap.String("event", msg.Event),
-			zap.String("sender", msg.SenderId))
-		return err
+func (c *Client) processMessage(msg *websocketMessage) error {
+	var wrapper pb.MessageWrapper
+	if err := proto.Unmarshal(msg.data, &wrapper); err != nil {
+		return fmt.Errorf("erro ao decodificar wrapper: %v", err)
 	}
 
-	// Processamento normal...
-	return c.circuitBreaker.Execute(func() error {
-		return c.processMessageInternal(msg)
-	})
+	// Verifica se a mensagem é para este cliente
+	if wrapper.SenderId != "" && wrapper.SenderId != c.ID {
+		return nil // Ignora mensagens de outros clientes
+	}
+
+	if handler, ok := c.handlers[wrapper.Event]; ok {
+		var payload pb.Message
+		if err := proto.Unmarshal(wrapper.Data, &payload); err != nil {
+			return fmt.Errorf("erro ao decodificar payload: %v", err)
+		}
+		handler(&payload, c)
+		return nil
+	}
+
+	return fmt.Errorf("handler não encontrado para o evento: %s", wrapper.Event)
 }
 
 func (c *Client) processMessageInternal(msg *SequencedMessage) error {
@@ -151,6 +189,16 @@ func (c *Client) Close() error {
 		return c.conn.Close()
 	}
 	return nil
+}
+
+// Novo método para registrar handlers de texto
+func (c *Client) OnText(handler func(string, *Client)) {
+	c.textHandlers["text"] = handler
+}
+
+// Novo método para enviar mensagens de texto
+func (c *Client) EmitText(text string) error {
+	return c.conn.WriteMessage(websocket.TextMessage, []byte(text))
 }
 
 // Adicione os demais métodos (On, Emit, listen) aqui...
