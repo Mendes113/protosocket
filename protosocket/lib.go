@@ -5,6 +5,12 @@ import (
 	"net/http"
 )
 
+type ServerConfig struct {
+	Path string
+}
+
+
+
 type SocketServer interface {
 	OnConnection(func(*Socket))
 	Start(port string) error
@@ -22,12 +28,18 @@ func New(config ...ServerConfig) SocketServer {
 	}
 
 	return &socketServer{
-		Server: NewServer(cfg),
+		Server: NewServer(),
 		config: cfg,
 	}
 }
 
 func (s *socketServer) Start(port string) error {
+	if s.config.Path == "" {
+		s.config.Path = "/"
+	} else if s.config.Path[0] != '/' {
+		s.config.Path = "/" + s.config.Path
+	}
+
 	http.Handle(s.config.Path, s.Server)
 	log.Printf("Servidor WebSocket iniciado em %s%s", port, s.config.Path)
 	return http.ListenAndServe(port, nil)
