@@ -1,0 +1,15 @@
+// message.proto
+syntax = "proto3";
+
+package protosocket;
+
+import "google/protobuf/any.proto";
+
+// Ajuste o go_package conforme sua organização, por exemplo:
+option go_package = "github.com/mendes113/protosocket";
+
+// Message representa o formato da mensagem trocada entre servidor e cliente.
+message Message {
+  string event = 1;
+  google.protobuf.Any data = 2;
+}

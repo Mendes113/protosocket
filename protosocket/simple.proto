@@ -1,0 +1,11 @@
+    // simple.proto
+syntax = "proto3";
+
+package protosocket;
+
+option go_package = "github.com/mendes113/protosocket";
+
+// SimpleMessage é usada para enviar dados simples.
+message SimpleMessage {
+  string text = 1;
+}
