@@ -2,6 +2,7 @@ package protosocket
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -12,6 +13,14 @@ type Metrics struct {
 	MessagesSent      int
 	StartTime         time.Time
 	mutex             sync.RWMutex
+}
+
+type MetricsCollector struct {
+	messagesSent     uint64
+	messagesReceived uint64
+	bytesTransferred uint64
+	errors           uint64
+	latencies        []time.Duration
 }
 
 func NewMetrics() *Metrics {
@@ -33,3 +42,12 @@ func (m *Metrics) ConnectionClosed() {
 	m.ActiveConnections--
 }
 
+func (m *MetricsCollector) RecordMessage(size int, latency time.Duration) {
+	atomic.AddUint64(&m.messagesSent, 1)
+	atomic.AddUint64(&m.bytesTransferred, uint64(size))
+	m.latencies = append(m.latencies, latency)
+}
+
+func (m *MetricsCollector) RecordError() {
+	atomic.AddUint64(&m.errors, 1)
+}

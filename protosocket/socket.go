@@ -8,7 +8,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"google.golang.org/protobuf/proto"
-	"google.golang.org/protobuf/types/known/anypb"
 )
 
 // Socket representa uma conexão com um cliente.
@@ -40,24 +39,24 @@ func (s *Socket) On(event string, callback func(data proto.Message, socket *Sock
 // Emit envia uma mensagem para o cliente usando protobuf.
 // O parâmetro `data` deve ser uma mensagem protobuf que será empacotada no campo Any.
 func (s *Socket) Emit(event string, data proto.Message) error {
-	anyData, err := anypb.New(data)
+	// Serializa o dado diretamente para bytes
+	msgData, err := proto.Marshal(data)
 	if err != nil {
 		return err
 	}
 
-	// Cria a mensagem protobuf.
+	// Cria a mensagem protobuf
 	msg := &Message{
 		Event: event,
-		Data:  anyData,
+		Data:  msgData, // Agora usa []byte diretamente
 	}
 
-	// Serializa a mensagem para []byte.
+	// Serializa a mensagem para []byte
 	b, err := proto.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	// Envia a mensagem como binário.
 	return s.Conn.WriteMessage(websocket.BinaryMessage, b)
 }
 
@@ -81,41 +80,42 @@ func (s *Socket) Listen() {
 			break
 		}
 
-		// Verifica se a mensagem é binária.
 		if msgType != websocket.BinaryMessage {
 			log.Println("Mensagem recebida não é binária; ignorando")
 			continue
 		}
 
-		// Desserializa a mensagem usando protobuf.
-		var msg Message
-		if err := proto.Unmarshal(b, &msg); err != nil {
-			log.Println("Erro ao desserializar mensagem:", err)
+		var wrapper Message
+		if err := proto.Unmarshal(b, &wrapper); err != nil {
+			log.Println("Erro ao desserializar wrapper:", err)
 			continue
 		}
 
-		// Extrai o dado do Any
-		var anyData anypb.Any
-		if err := msg.Data.UnmarshalTo(&anyData); err != nil {
-			log.Println("Erro ao decodificar Any:", err)
+		// Desserializa para o tipo correto baseado no evento
+		var msg proto.Message
+		switch wrapper.Event {
+		case "chat":
+			msg = &ChatMessage{}
+		case "binary":
+			msg = &BinaryMessage{}
+		default:
+			log.Printf("Evento desconhecido: %s\n", wrapper.Event)
 			continue
 		}
 
-		// Desserializa para o tipo concreto
-		concreteMsg, err := anyData.UnmarshalNew()
-		if err != nil {
+		if err := proto.Unmarshal(wrapper.Data, msg); err != nil {
 			log.Println("Erro ao desserializar mensagem concreta:", err)
 			continue
 		}
 
 		s.lock.Lock()
-		handler, exists := s.events[msg.Event]
+		handler, exists := s.events[wrapper.Event]
 		s.lock.Unlock()
 
 		if exists && handler != nil {
-			go handler(concreteMsg, s)
+			go handler(msg, s)
 		} else {
-			log.Printf("Nenhum handler registrado para o evento '%s'\n", msg.Event)
+			log.Printf("Nenhum handler registrado para '%s'\n", wrapper.Event)
 		}
 	}
 }
